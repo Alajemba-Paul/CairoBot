@@ -17,3 +17,11 @@ export function parseNaturalLanguageOrder(text: string): Partial<OrderDetails> |
     slPrice: match[6] ? parseFloat(match[6]) : undefined
   };
 }
+
+const NL_CLOSE_REGEX = /close\s+(?:my\s+)?([a-zA-Z]+)\s+position/i;
+
+export function parseCloseIntent(text: string): { market: string } | null {
+  const match = text.match(NL_CLOSE_REGEX);
+  if (!match) return null;
+  return { market: match[1].toUpperCase() };
+}
