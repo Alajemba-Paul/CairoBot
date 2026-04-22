@@ -5,9 +5,19 @@ import { starkZap } from './starkzap';
 
 async function bootstrap() {
   console.log("Starting CairoBot...");
-  
-  // Initialize StarkZap SDK
-  await starkZap.init();
+
+  // Config validation already ran at import time (config/index.ts module level).
+  // Calling config here ensures it is referenced before any network calls.
+  void config;
+
+  // Initialize StarkZap SDK — must happen before new Telegraf(...)
+  try {
+    await starkZap.init();
+  } catch (err) {
+    console.error('[StarkZap] SDK initialization failed:', err);
+    process.exit(1);
+  }
+  console.log(`[StarkZap] SDK initialized on ${config.NETWORK}`);
 
   const bot = new Telegraf(config.BOT_TOKEN);
   

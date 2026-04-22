@@ -1,32 +1,89 @@
+import { StarkZap, StarkSigner, OnboardStrategy } from 'starkzap';
+import type { Call } from 'starkzap';
+import type { WalletInterface } from 'starkzap';
 import { config } from '../config';
 
-// Mock wrapper for the StarkZap SDK
-export class StarkZapSDK {
-  private isInitialized = false;
+// STRK20 confidential fund contract address on Starknet Sepolia
+const STRK20_CONFIDENTIAL_CONTRACT =
+  '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
 
-  async init() {
-    console.log(`[StarkZap] Initializing SDK on ${config.NETWORK}...`);
-    this.isInitialized = true;
+export interface RealWallet {
+  address: string;
+  execute: (calls: Call[]) => Promise<{ transaction_hash: string; explorerUrl: string }>;
+  shieldedTransfer: (amount: number) => Promise<void>;
+}
+
+export class StarkZapService {
+  private sdk!: StarkZap;
+  private walletCache: Map<string, RealWallet> = new Map();
+
+  async init(): Promise<void> {
+    this.sdk = new StarkZap({ network: config.NETWORK });
   }
 
-  async getWallet(userId: number | string) {
-    if (!this.isInitialized) throw new Error("StarkZap not initialized");
+  async getWallet(userId: number | string): Promise<RealWallet> {
+    const key = String(userId);
+
+    if (this.walletCache.has(key)) {
+      return this.walletCache.get(key)!;
+    }
+
+    const { wallet } = await this.sdk.onboard({
+      strategy: OnboardStrategy.Signer,
+      account: { signer: new StarkSigner(config.EXTENDED_STARK_PRIVATE_KEY) },
+      deploy: 'if_needed',
+    });
+
+    const realWallet = this.toRealWallet(wallet);
+    this.walletCache.set(key, realWallet);
+    return realWallet;
+  }
+
+  async enableShieldedMargin(walletAddress: string, amount: number): Promise<void> {
+    const cached = [...this.walletCache.values()].find(
+      (w) => w.address === walletAddress
+    );
+
+    if (!cached) {
+      throw new Error(`No cached wallet found for address ${walletAddress}`);
+    }
+
+    // Re-fetch the underlying SDK wallet to access tx() builder
+    const { wallet } = await this.sdk.onboard({
+      strategy: OnboardStrategy.Signer,
+      account: { signer: new StarkSigner(config.EXTENDED_STARK_PRIVATE_KEY) },
+      deploy: 'if_needed',
+    });
+
+    // Build a raw confidential_fund call via the STRK20 privacy module
+    const amountLow = BigInt(Math.floor(amount * 1e6)).toString();
+    const amountHigh = '0';
+
+    const tx = await wallet
+      .tx()
+      .add({
+        contractAddress: STRK20_CONFIDENTIAL_CONTRACT,
+        entrypoint: 'confidential_fund',
+        calldata: [amountLow, amountHigh],
+      })
+      .send();
+
+    await tx.wait();
+    console.log(`[StarkZap] Shielded ${amount} USDC for ${walletAddress} — tx: ${tx.hash}`);
+  }
+
+  private toRealWallet(wallet: WalletInterface): RealWallet {
     return {
-      address: `0xStarkZapWalletFor${userId}`,
-      balance: '10000', // Mock USDC balance
-      execute: async (calls: any[]) => {
-        console.log(`[StarkZap] Executing gasless transaction for user ${userId}...`);
-        console.log(`[StarkZap] Calls:`, JSON.stringify(calls, null, 2));
-        return { transaction_hash: `0xMockHash_${Date.now()}` };
-      }
+      address: wallet.address,
+      execute: async (calls: Call[]) => {
+        const tx = await wallet.execute(calls);
+        return { transaction_hash: tx.hash, explorerUrl: tx.explorerUrl };
+      },
+      shieldedTransfer: async (amount: number) => {
+        await this.enableShieldedMargin(wallet.address, amount);
+      },
     };
-  }
-
-  async enableShieldedMargin(walletAddress: string, amount: number) {
-    console.log(`[StarkZap] Shielding ${amount} USDC for ${walletAddress}...`);
-    // Simulates STRK20 privacy logic integration
-    return true;
   }
 }
 
-export const starkZap = new StarkZapSDK();
+export const starkZap = new StarkZapService();

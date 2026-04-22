@@ -1,3 +1,5 @@
+import { Position } from './extended';
+
 export type Side = 'LONG' | 'SHORT';
 
 export interface OrderDetails {
@@ -18,11 +20,22 @@ export enum WizardStep {
   AWAIT_CUSTOM_MARGIN,
   AWAIT_TP,
   AWAIT_SL,
-  AWAIT_CONFIRM
+  AWAIT_CONFIRM,
+  AWAIT_CLOSE_CONFIRM,
+  AWAIT_TP_CONFIRM,
+  AWAIT_SL_CONFIRM
 }
 
 export interface WizardState {
   step: WizardStep;
   order: Partial<OrderDetails>;
-  messageId?: number; 
+  walletAddress?: string;
+  closeMarket?: string;
+  closePosition?: Position;
+  messageId?: number;
+}
+
+export interface CloseConfirmState {
+  market: string;
+  position: Position;
 }
