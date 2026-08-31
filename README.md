@@ -1,52 +1,136 @@
 # CairoBot
 
-**Simple. Private. On-chain perps trading on Extended via Telegram.**
+Private perps on Extended through the live STRK20 pool.
 
-CairoBot is a simple Telegram bot for trading perpetuals on **Extended** — the hyper-performant perp DEX on Starknet.
+One engine. Three skins: Telegram, CLI, MCP (OpenClaw / Hermes).
 
-- Type natural language commands or use the clean button-guided flow.
-- All margin is **shielded by default** using StarkZap (confidential transfers / STRK20 privacy).
-- Currently built and tested on **Starknet Sepolia testnet** (ready for StarkZap bounty submissions and safe testing).
-- Core principles: **Simplicity + Privacy**. No AI suggestions, absolute prices only for TP/SL, fat-finger protection built-in.
+long sol 10x 50 usdc tp @ 200 sl @ 140
 
-## Features
+Same intent from a message, a terminal, or an agent tool call.
 
-### Natural Language Mode (one-shot)
-- `long sol 20x 500 usdc tp @ 90 sl @ 85`
-- `short btc 50x with 2000 margin tp @ 92000 sl @ 85000`
-- `close my sol position`
+What this is
 
-### Strict Button-Driven Guided Flow (`/long` or `/short`)
-- Inline keyboard: BIG GREEN **LONG** | BIG RED **SHORT** buttons
-- Choose market from 4 demo perps: **BTC-USD**, **ETH-USD**, **SOL-USD**, **STRK-USD**
-- Leverage presets: 5x | 10x | 20x | 50x | 100x | Custom
-- Shielded capital presets (USDC): 100 | 500 | 1000 | 5000 | Custom
-- Enter absolute **TP price** (or skip)
-- Enter absolute **SL price** (or skip)
-- Final preview card → reply exactly **`CONFIRM`** to execute
+A trading desk that does not start from a public wallet on a public book.
 
-### Other Commands
-- `/positions` — View your open positions (shielded)
-- `/close SOL` — Market close a position
-- `/tp SOL @ 95` — Update take-profit
-- `/sl BTC @ 82000` — Update stop-loss
-- `/cancel` — Abort current wizard or flow
+Shield USDC into the STRK20 pool.
+MarginRouter.privacy_invoke moves that value to Extended (FundMargin) or back to an open note (SweepPnL).
+The order hits Extended mainnet.
+You see a preview, then you confirm.
 
-**Privacy-first**: Margin uses StarkZap confidential/shielded transfers. Your collateral and position details stay private where possible on explorers.
+Inspired by IDEA-02 — private perpetuals behind one account.
 
-**Fat-finger protection**: Every order shows notional size, estimated liquidation price, high-leverage warning (>50x), and a clear privacy note before you confirm.
+What is private (and what is not)
 
-## Tech Stack
+| Public | Private |
+| --- | --- |
+| Shield: depositor, token, amount | Note-to-note transfers: parties and amounts |
+| Helper sandwich size and timing | Which note funded the helper |
+| Extended fill, size, and funding once it hits the book | Who initiated the pool → helper payment |
 
-- Node.js + TypeScript
-- Telegraf (Telegram bot with inline keyboards & callback queries)
-- StarkZap SDK (onboarding via Privy/Cartridge, shielded wallet, gasless where possible)
-- Extended testnet API for order placement (including conditional TP/SL)
-- Deployable on Railway or Render (free tier works perfectly)
+Shielding is a public deposit. Do not claim amount privacy on the perp. Claim identity privacy: the pool paid the helper, not “this Telegram user longed SOL.”
 
-## Quick Start (Local)
+Repo
 
-1. Clone the repo:
-   ```bash
-   git clone https://github.com/Alajemba-Paul/CairoBot.git
-   cd CairoBot
+src/core/            intent, risk, engine, privacy, Extended client
+src/adapters/        cli.ts · mcp.ts · telegram.ts
+cairo/               MarginRouter — one helper, two ops
+strk20.json          mainnet hashes the judges read
+
+Telegram, CLI, and MCP never talk to the pool or Extended directly. They call previewTrade / confirmTrade.
+
+Quick start
+
+git clone https://github.com/Alajemba-Paul/CairoBot
+cd CairoBot
+cp .env.example .env
+npm i
+npm test
+
+Parse without sending anything:
+
+npx tsx src/adapters/cli.ts parse "long sol 10x 50 usdc tp @ 200"
+
+Preview against mainnet marks (--json for agents):
+
+npx tsx src/adapters/cli.ts preview "short btc 5x 20 usdc" --json
+npx tsx src/adapters/cli.ts confirm 
+npx tsx src/adapters/cli.ts positions
+npx tsx src/adapters/cli.ts privacy
+
+Telegram:
+
+set BOT_TOKEN in .env
+npm run dev:telegram
+
+Then /start, or just type the sentence above. Buttons fill the same TradeIntent. Reply CONFIRM or tap it.
+
+MCP / OpenClaw / Hermes
+
+Five tools: preview_trade, confirm_trade, list_positions, close_position, privacy_status.
+
+OpenClaw:
+
+mcp: {
+  servers: {
+    cairobot: {
+      command: "npx",
+      args: ["tsx", "src/adapters/mcp.ts"],
+    },
+  },
+}
+
+Hermes (~/.hermes/config.yaml):
+
+mcp_servers:
+  cairobot:
+    command: npx
+    args: ["tsx", "src/adapters/mcp.ts"]
+
+Confirm is a separate call from preview. Treat leverage ≥ 20x as needing a human.
+
+Environment
+
+See .env.example. Mainnet defaults:
+
+NETWORK=mainnet
+CHAIN_ID=SN_MAIN
+RPC_URL=https://rpc.starknet.lava.build
+POOL_ADDRESS=0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a
+EXTENDED_API_BASE=https://api.starknet.extended.exchange
+
+HELPER_ADDRESS — deployed MarginRouter
+EXTENDED_COLLATERAL — Extended deposit contract; 0x0 still invokes the helper and returns USDC as an open note
+OPERATOR_ADDRESS / OPERATOR_PRIVATE_KEY — CLI / agent desk only. Never reuse this key for Telegram users
+BOT_TOKEN — Telegram skin only. CLI and MCP run without it
+
+Mainnet checklist
+
+Prizes need three successful pool-touching txs in strk20.json.
+
+Deploy cairo/MarginRouter, set HELPER_ADDRESS.
+Viewing key set.
+Shield USDC.
+Private note-to-note (even $1).
+privacy_invoke FundMargin or SweepPnL.
+Wire sendPoolCall in src/core/privacy.ts to Ready / Xverse Wallet API or the Privacy SDK. Until that session exists, confirm fails closed instead of faking a hash.
+Fill strk20.json:
+
+{
+  "transactions": ["0x…", "0x…", "0x…"],
+  "contracts": ["0x…MarginRouter"],
+  "demo_video": "https://youtu.be/…",
+  "demo_url": ""
+}
+
+Design rules
+
+One Cairo contract. Two ops. No general router — Jalin already exists.
+No shared signer across Telegram users.
+No AI price suggestions. Absolute TP/SL only.
+Preview expires in 60 seconds.
+Fat-finger card always shows notional, est. liq, leverage warning, and the public/private split.
+
+License
+
+MIT
+`
