@@ -1,27 +1,31 @@
 {
-  "name": "cairo-bot",
-  "version": "1.0.0",
-  "description": "CairoBot: Telegram bot for trading on Extended Exchange via Starknet Sepolia using StarkZap.",
-  "main": "dist/index.js",
+  "name": "cairobot",
+  "version": "2.0.0",
+  "description": "Private perps on Extended via STRK20. CLI, MCP, and Telegram share one engine.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "cairobot": "./dist/adapters/cli.js"
+  },
   "scripts": {
-    "dev": "ts-node src/index.ts",
+    "dev:telegram": "tsx src/adapters/telegram.ts",
+    "dev:mcp": "tsx src/adapters/mcp.ts",
+    "cli": "tsx src/adapters/cli.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
     "test": "vitest --run"
   },
   "dependencies": {
-    "axios": "^1.6.8",
+    "axios": "^1.7.7",
     "dotenv": "^16.4.5",
-    "starkzap": "^1.0.0",
-    "telegraf": "^4.16.3"
+    "telegraf": "^4.16.3",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/node": "^20.12.7",
-    "@types/nock": "^11.1.0",
-    "fast-check": "^3.19.0",
-    "nock": "^13.5.4",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.4.5",
+    "@types/node": "^20.14.0",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
     "vitest": "^1.6.0"
   }
 }
