@@ -32,10 +32,10 @@ Never “amount-private perps.” Extended fills are public. This is not a new Z
 
 ```bash
 git clone https://github.com/Alajemba-Paul/CairoBot.git
-cd CairoBot && git checkout v2
+cd CairoBot && git checkout main
 npm install
 npm test
-npm run cli -- parse "long sol 10x 50 usdc tp @ 200"
+npm run cli -- parse "long sol 10x 50 usdc tp @ 200 sl @ 85"
 ```
 
 `parse` uses the NL regex only. It does not need `BOT_TOKEN`, a key, or RPC.
@@ -43,7 +43,7 @@ npm run cli -- parse "long sol 10x 50 usdc tp @ 200"
 Preview hits Extended **mainnet** marks:
 
 ```bash
-npm run cli -- preview "long sol 10x 50 usdc tp @ 200"
+npm run cli -- preview "long sol 10x 50 usdc tp @ 200 sl @ 85"
 ```
 
 Confirm is fail-closed:
@@ -121,7 +121,7 @@ Confirm still needs a Wallet API session. MCP will not invent a hash.
 
 Live bot: [t.me/cairov2_bot](https://t.me/cairov2_bot). Desk: [cairobot.vercel.app](https://cairobot.vercel.app).
 
-Type `long sol 10x 50 usdc tp @ 200` or tap buttons that **only** fill a `TradeIntent`. Reply `CONFIRM`. Commands: `/positions` `/privacy` `/cancel`. No in-bot key cache. No shared `EXTENDED_STARK_PRIVATE_KEY`. Signing is Ready / Xverse on the desk.
+Type `long sol 10x 50 usdc tp @ 200 sl @ 85` or tap buttons that **only** fill a `TradeIntent`. Missing SL prints `SL UNSET` — reply `sl @ 85`. Reply `CONFIRM`. Commands: `/positions` `/privacy` `/cancel`. No in-bot key cache. No shared `EXTENDED_STARK_PRIVATE_KEY`. Signing is Ready / Xverse on the desk.
 
 ```bash
 # long-poll (Railway / Fly / this host)

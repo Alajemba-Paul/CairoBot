@@ -64,6 +64,8 @@ export function buildPreviewMath(
     if (intent.side === "SHORT" && intent.slPrice <= markPrice) {
       warnings.push("Stop-loss is at or below mark for a short.");
     }
+  } else {
+    warnings.push("No stop-loss. Reply sl @ PRICE or set it on the desk.");
   }
   if (markPrice <= 0) {
     warnings.push("Mark price unavailable — refuse to size this order.");
@@ -85,8 +87,23 @@ export function buildPreviewMath(
   };
 }
 
+function money(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  if (n >= 1) return n.toFixed(4);
+  return n.toFixed(6);
+}
+
 export function formatPreviewCard(preview: Preview): string {
   const { intent } = preview;
+  const slLine =
+    intent.slPrice !== undefined
+      ? `SL         $${money(intent.slPrice)}`
+      : "SL         UNSET  —  reply  sl @ PRICE";
+  const tpLine =
+    intent.tpPrice !== undefined
+      ? `TP         $${money(intent.tpPrice)}`
+      : "TP         UNSET  —  reply  tp @ PRICE";
   const lines = [
     "Order Preview  ·  60s TTL  ·  no funds moved",
     "",
@@ -95,20 +112,19 @@ export function formatPreviewCard(preview: Preview): string {
     `Margin     ${intent.marginUsdc} USDC`,
     `Leverage   ${intent.leverage}x`,
     `Notional   $${preview.notionalUsdc.toFixed(2)}`,
-    `Mark       $${preview.markPrice.toFixed(4)}`,
-    `Est. liq   ~$${preview.estLiqPrice.toFixed(4)}`,
+    `Mark       $${money(preview.markPrice)}`,
+    `Est. liq   ~$${money(preview.estLiqPrice)}`,
     `Fee (est)  $${preview.feeUsdc.toFixed(4)}`,
-    `TP         ${intent.tpPrice !== undefined ? `$${intent.tpPrice}` : "None"}`,
-    `SL         ${intent.slPrice !== undefined ? `$${intent.slPrice}` : "None"}`,
-    "",
-    "Privacy",
-    `  Public : ${preview.privacy.public.join(" ")}`,
-    `  Private: ${preview.privacy.private.join(" ")}`,
-    `  ${preview.privacy.never}`,
+    tpLine,
+    slLine,
   ];
   if (preview.warnings.length > 0) {
     lines.push("", ...preview.warnings.map((w) => `WARNING: ${w}`));
   }
-  lines.push("", `Preview ID  ${preview.id}`, "Reply CONFIRM to execute. Fail-closed without a wallet session.");
+  lines.push(
+    "",
+    `Preview ID  ${preview.id}`,
+    "Reply CONFIRM to sign on the desk. This chat never signs.",
+  );
   return lines.join("\n");
 }

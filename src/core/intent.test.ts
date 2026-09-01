@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { formatIntent, normalizeMarket, parseCloseIntent, parseTradeIntent, tryParse } from "./intent.ts";
+import {
+  extractTriggers,
+  formatIntent,
+  normalizeMarket,
+  parseCloseIntent,
+  parseTradeIntent,
+  parseTriggerOnly,
+  tryParse,
+} from "./intent.ts";
 
 describe("parseTradeIntent", () => {
   it("parses the sprint one-liner", () => {
@@ -31,6 +39,32 @@ describe("parseTradeIntent", () => {
     assert.equal(b.slPrice, 85000);
   });
 
+  it("extracts SL independently of TP and order", () => {
+    const swapped = parseTradeIntent("long sol 10x 50 usdc sl @ 85 tp @ 200");
+    assert.equal(swapped.slPrice, 85);
+    assert.equal(swapped.tpPrice, 200);
+
+    const glued = parseTradeIntent("long sol 10x 50 usdc sl@85");
+    assert.equal(glued.slPrice, 85);
+    assert.equal(glued.tpPrice, undefined);
+
+    const noAt = parseTradeIntent("long sol 10x 50 usdc sl 85");
+    assert.equal(noAt.slPrice, 85);
+
+    const stopAt = parseTradeIntent("long sol 10x 50 usdc stop @ 85");
+    assert.equal(stopAt.slPrice, 85);
+
+    const stopLoss = parseTradeIntent("short btc 5x 100 usdc stop-loss @ 90,000");
+    assert.equal(stopLoss.slPrice, 90000);
+    assert.equal(stopLoss.tpPrice, undefined);
+  });
+
+  it("does not treat SOL as a stop-loss", () => {
+    const intent = parseTradeIntent("long sol 10x 50 usdc");
+    assert.equal(intent.slPrice, undefined);
+    assert.equal(intent.tpPrice, undefined);
+  });
+
   it("accepts ETH and STRK", () => {
     assert.equal(parseTradeIntent("long eth 5x 100 usdc").market, "ETH-USD");
     assert.equal(parseTradeIntent("short strk 3x 25 usdc").market, "STRK-USD");
@@ -43,10 +77,31 @@ describe("parseTradeIntent", () => {
   });
 
   it("round-trips through formatIntent", () => {
-    const text = "long sol 10x 50 usdc tp @ 200";
+    const text = "long sol 10x 50 usdc tp @ 200 sl @ 85";
     const intent = parseTradeIntent(text);
     const again = parseTradeIntent(formatIntent(intent));
     assert.deepEqual(again, intent);
+  });
+});
+
+describe("extractTriggers / parseTriggerOnly", () => {
+  it("reads both triggers from leftover text", () => {
+    assert.deepEqual(extractTriggers("sl @ 85 tp @ 200"), { tpPrice: 200, slPrice: 85 });
+    assert.deepEqual(extractTriggers("take profit @ 4,200 stop loss 3,800"), {
+      tpPrice: 4200,
+      slPrice: 3800,
+    });
+  });
+
+  it("parses follow-up SL / TP lines", () => {
+    assert.deepEqual(parseTriggerOnly("sl @ 85"), { slPrice: 85 });
+    assert.deepEqual(parseTriggerOnly("sl@85"), { slPrice: 85 });
+    assert.deepEqual(parseTriggerOnly("sl 85"), { slPrice: 85 });
+    assert.deepEqual(parseTriggerOnly("stop @ 85"), { slPrice: 85 });
+    assert.deepEqual(parseTriggerOnly("stop-loss @ 85"), { slPrice: 85 });
+    assert.deepEqual(parseTriggerOnly("tp @ 200"), { tpPrice: 200 });
+    assert.deepEqual(parseTriggerOnly("take-profit @ 200"), { tpPrice: 200 });
+    assert.equal(parseTriggerOnly("long sol 10x 50 usdc"), null);
   });
 });
 
@@ -68,8 +123,9 @@ describe("normalizeMarket", () => {
 
 describe("tryParse", () => {
   it("discriminates trade vs close", () => {
-    const trade = tryParse("long sol 10x 50 usdc tp @ 200");
+    const trade = tryParse("long sol 10x 50 usdc tp @ 200 sl @ 85");
     assert.equal(trade?.kind, "trade");
+    if (trade?.kind === "trade") assert.equal(trade.intent.slPrice, 85);
     const close = tryParse("close sol");
     assert.equal(close?.kind, "close");
     assert.equal(tryParse("what is btc"), null);
