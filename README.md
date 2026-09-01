@@ -1,52 +1,220 @@
 # CairoBot
 
-**Simple. Private. On-chain perps trading on Extended via Telegram.**
+**Private perps on Extended, from chat, CLI, or an agent.**
 
-CairoBot is a simple Telegram bot for trading perpetuals on **Extended** — the hyper-performant perp DEX on Starknet.
+One engine. Three skins: Telegram NL, CLI, MCP (OpenClaw / Hermes). Collateral moves through the live STRK20 pool. Identity stays off the book. Built for the Starknet STRK20 Privacy Sprint (IDEA-02).
 
-- Type natural language commands or use the clean button-guided flow.
-- All margin is **shielded by default** using StarkZap (confidential transfers / STRK20 privacy).
-- Currently built and tested on **Starknet Sepolia testnet** (ready for StarkZap bounty submissions and safe testing).
-- Core principles: **Simplicity + Privacy**. No AI suggestions, absolute prices only for TP/SL, fat-finger protection built-in.
+```
+Telegram | CLI | MCP | web desk
+              \  |  /
+            engine.ts
+            /        \
+     privacy.ts     venues/extended.ts
+        |                  |
+     STRK20 pool      Extended mainnet CLOB
+        |
+     MarginRouter.privacy_invoke
+       op=0 FundMargin
+       op=1 SweepPnl
+```
 
-## Features
+## What is actually private
 
-### Natural Language Mode (one-shot)
-- `long sol 20x 500 usdc tp @ 90 sl @ 85`
-- `short btc 50x with 2000 margin tp @ 92000 sl @ 85000`
-- `close my sol position`
+| Visible on-chain | Not published |
+| --- | --- |
+| Shield depositor, token, and amount | Note-to-note parties and amounts |
+| Helper size and timing | Which note funded the helper |
+| The Extended fill once it hits the book | Who initiated pool → helper |
 
-### Strict Button-Driven Guided Flow (`/long` or `/short`)
-- Inline keyboard: BIG GREEN **LONG** | BIG RED **SHORT** buttons
-- Choose market from 4 demo perps: **BTC-USD**, **ETH-USD**, **SOL-USD**, **STRK-USD**
-- Leverage presets: 5x | 10x | 20x | 50x | 100x | Custom
-- Shielded capital presets (USDC): 100 | 500 | 1000 | 5000 | Custom
-- Enter absolute **TP price** (or skip)
-- Enter absolute **SL price** (or skip)
-- Final preview card → reply exactly **`CONFIRM`** to execute
+Never “amount-private perps.” Extended fills are public. This is not a new ZK scheme — it is STRK20 notes plus one `privacy_invoke` helper.
 
-### Other Commands
-- `/positions` — View your open positions (shielded)
-- `/close SOL` — Market close a position
-- `/tp SOL @ 95` — Update take-profit
-- `/sl BTC @ 82000` — Update stop-loss
-- `/cancel` — Abort current wizard or flow
+## Clone, test, parse (no env)
 
-**Privacy-first**: Margin uses StarkZap confidential/shielded transfers. Your collateral and position details stay private where possible on explorers.
+```bash
+git clone https://github.com/Alajemba-Paul/CairoBot.git
+cd CairoBot && git checkout v2
+npm install
+npm test
+npm run cli -- parse "long sol 10x 50 usdc tp @ 200"
+```
 
-**Fat-finger protection**: Every order shows notional size, estimated liquidation price, high-leverage warning (>50x), and a clear privacy note before you confirm.
+`parse` uses the NL regex only. It does not need `BOT_TOKEN`, a key, or RPC.
 
-## Tech Stack
+Preview hits Extended **mainnet** marks:
 
-- Node.js + TypeScript
-- Telegraf (Telegram bot with inline keyboards & callback queries)
-- StarkZap SDK (onboarding via Privy/Cartridge, shielded wallet, gasless where possible)
-- Extended testnet API for order placement (including conditional TP/SL)
-- Deployable on Railway or Render (free tier works perfectly)
+```bash
+npm run cli -- preview "long sol 10x 50 usdc tp @ 200"
+```
 
-## Quick Start (Local)
+Confirm is fail-closed:
 
-1. Clone the repo:
-   ```bash
-   git clone https://github.com/Alajemba-Paul/CairoBot.git
-   cd CairoBot
+```bash
+npm run cli -- confirm pv_deadbeef
+# no wallet session
+```
+
+Never a fake transaction hash. Ready or Xverse (Wallet API) must attach `WalletAccountV6.strk20InvokeTransaction`. The CLI/agent desk may use `OPERATOR_ADDRESS` / `OPERATOR_PRIVATE_KEY` as an address hint only — that key cannot sign STRK20. Telegram never reads it.
+
+## Web desk + wallet
+
+Wallet connect does **not** defeat the product. Ready / Xverse is the intended confirm path. The viewing key stays in the wallet. The desk never holds a key.
+
+Embedded previews (Grok iframe, some mobile in-app browsers) cannot see wallet extensions. In that case the desk reroutes:
+
+- **Telegram** deep link (`VITE_TELEGRAM_BOT`) — NL + fat-finger. Reply `CONFIRM` still fail-closes and points back to the desk to sign.
+- **CLI / MCP copy-paste** on the desk — the agent path.
+
+Open the Vercel URL in a normal browser with Ready or Xverse installed to sign `privacy_invoke`.
+
+## Core API
+
+Adapters call only these:
+
+```ts
+previewTrade(intent) -> Preview      // 60s ttl, no funds
+confirmTrade(previewId) -> Receipt   // fund helper, then place order
+listPositions(owner)
+closePosition({ owner, market })     // reduce-only, then SweepPnl
+privacyStatus(owner)
+```
+
+`TradeIntent`: `{ owner, market, side, leverage, marginUsdc, tpPrice?, slPrice? }`
+
+Markets: `BTC-USD ETH-USD SOL-USD STRK-USD`.
+
+## MCP (OpenClaw / Hermes)
+
+Five tools: `preview_trade`, `confirm_trade`, `list_positions`, `close_position`, `privacy_status`.
+
+Leverage ≥ 20 requires `confirmHighLeverage: true` on `confirm_trade`.
+
+**OpenClaw** (`~/.openclaw/mcp.json` or project config):
+
+```json
+{
+  "mcpServers": {
+    "cairobot": {
+      "command": "node",
+      "args": ["--experimental-strip-types", "src/adapters/mcp.ts"],
+      "cwd": "/path/to/CairoBot"
+    }
+  }
+}
+```
+
+**Hermes**:
+
+```json
+{
+  "servers": {
+    "cairobot": {
+      "command": "node",
+      "args": ["--experimental-strip-types", "src/adapters/mcp.ts"]
+    }
+  }
+}
+```
+
+Confirm still needs a Wallet API session. MCP will not invent a hash.
+
+## Telegram
+
+```bash
+# .env  BOT_TOKEN=...     (only this adapter needs it)
+npm run telegram
+```
+
+Type `long sol 10x 50 usdc tp @ 200` or tap buttons that **only** fill a `TradeIntent`. Reply `CONFIRM`. Commands: `/positions` `/privacy` `/cancel`. No in-bot key cache. No shared `EXTENDED_STARK_PRIVATE_KEY`.
+
+## MarginRouter
+
+One helper. Caller must be the STRK20 pool. Measures the ERC-20 balance the pool already sent. One invoke per tx. End token balance is 0. Does not transfer to the user.
+
+- `op=0 FundMargin` — if `venue != 0`, approve + `deposit(user, amount)`; leftover → `OpenNoteDeposit`. If venue is 0, approve the full balance back to the pool (valid first pool tx).
+- `op=1 SweepPnl` — approve the full helper balance to the pool as one open note.
+
+`OpenNoteDeposit { note_id, token, amount: u128 }` matches starter-kit positional Serde.
+
+```bash
+cd cairo && scarb build
+```
+
+## Ship it (mainnet + Vercel + live bot + agent)
+
+GitHub rejected `git push origin main` because this tree is a **new history** (Grok export of v2). Remote `main` is the old Sepolia / StarkZap bot. They do not share a commit. Do **not** force-push `main`. Ship on branch `v2`, PR, merge.
+
+### 1. MarginRouter on SN_MAIN
+
+```bash
+cd cairo && scarb build
+# starkli declare + deploy with constructor = STRK20 pool
+# 0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a
+```
+
+Set `MARGIN_ROUTER` and `VITE_MARGIN_ROUTER` to the deployed address. Empty helper = confirm fails closed (honest).
+
+### 2. Web desk on Vercel
+
+Production branch must be **`v2` until it is merged to `main`**. Env (no secrets in `VITE_` except public addresses):
+
+```
+VITE_MARGIN_ROUTER=<helper>
+VITE_TELEGRAM_BOT=<BotFather username without @>
+VITE_DESK_URL=https://<your-app>.vercel.app
+DESK_URL=https://<your-app>.vercel.app
+```
+
+The desk connects Ready / Xverse, previews live Extended marks, and signs `privacy_invoke`. Open it **outside** an iframe.
+
+### 3. Live Telegram bot (always-on process)
+
+Vercel will not long-poll. Run the adapter on Railway / Render / Fly:
+
+```
+BotFather → /newbot → BOT_TOKEN
+npm run telegram
+```
+
+Env: `BOT_TOKEN`, `DESK_URL`, `MARGIN_ROUTER`, `NETWORK=mainnet`. After deploy, set `VITE_TELEGRAM_BOT` on Vercel so the desk deep-links.
+
+`CONFIRM` in chat never auto-signs. It replies with the desk URL + CLI/MCP copy.
+
+### 4. Agentic flow (MCP)
+
+```bash
+git clone https://github.com/Alajemba-Paul/CairoBot.git && cd CairoBot && git checkout v2
+npm install
+# drop the OpenClaw / Hermes snippet above into mcp.json
+# tools: preview_trade, confirm_trade, list_positions, close_position, privacy_status
+```
+
+`preview_trade` works with no key. `confirm_trade` fails closed until a Wallet API session is attached.
+
+### 5. Record real pool txs
+
+Shield USDC, note-to-note, helper invoke. Put ≥ 3 real SN_MAIN hashes in `strk20.json`. Do not invent them.
+
+## Mainnet checklist
+
+1. Network is `SN_MAIN`. Default RPC `https://rpc.starknet.lava.build`.
+2. Pool `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`.
+3. USDC `0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8` — **not** ETH.
+4. Deploy `MarginRouter` with the pool as constructor arg. Set `MARGIN_ROUTER`.
+5. Shield USDC into the pool (Ready / Xverse viewing key stays in the wallet).
+6. `preview` → `confirm` with a Wallet API session. That `privacy_invoke` is a pool-touching tx.
+7. Record viewing-key setup, shield, note-to-note, and helper invoke in `strk20.json`. Do not invent hashes.
+
+## Constants
+
+```
+NETWORK=mainnet
+CHAIN_ID=SN_MAIN
+RPC_URL=https://rpc.starknet.lava.build
+POOL=0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a
+USDC=0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8
+EXTENDED_API=https://api.starknet.extended.exchange
+```
+
+## License
+
+MIT
