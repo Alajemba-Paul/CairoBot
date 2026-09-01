@@ -19,8 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { marksFn, positionsFn, previewFn, privacyFn } from "@/core/api";
 import { REPO_BRANCH, REPO_URL } from "@/core/constants";
-import { MARKETS, type Market } from "@/core/types";
-import type { Position, Preview, PrivacyStatus, WalletSession } from "@/core/types";
+import { MARKETS, type Market, type Position, type Preview, type PrivacyStatus, type TradeIntent, type WalletSession } from "@/core/types";
+import { tryParse } from "@/core/intent";
 import type { MarkSnapshot } from "@/core/venues/extended";
 import {
   confirmWithWallet,
@@ -34,7 +34,7 @@ import {
 export const Route = createFileRoute("/")({ component: Home });
 
 const EXAMPLES = [
-  "long sol 10x 50 usdc tp @ 200",
+  "long sol 10x 50 usdc tp @ 200 sl @ 85",
   "short btc 5x 100 usdc sl @ 90000",
   "long eth 20x 250 usdc tp @ 5000 sl @ 2800",
 ];
@@ -45,8 +45,8 @@ const MARGINS = [50, 100, 500, 1000];
 const CLI_SNIPPET = `git clone ${REPO_URL}.git
 cd CairoBot && git checkout ${REPO_BRANCH}
 npm install
-npm run cli -- parse "long sol 10x 50 usdc tp @ 200"
-npm run cli -- preview "long sol 10x 50 usdc tp @ 200"`;
+npm run cli -- parse "long sol 10x 50 usdc tp @ 200 sl @ 85"
+npm run cli -- preview "long sol 10x 50 usdc tp @ 200 sl @ 85"`;
 
 const MCP_SNIPPET = `{
   "mcpServers": {
@@ -59,7 +59,7 @@ const MCP_SNIPPET = `{
 }`;
 
 function Home() {
-  const [text, setText] = useState("long sol 10x 50 usdc tp @ 200");
+  const [text, setText] = useState("long sol 10x 50 usdc tp @ 200 sl @ 85");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +72,8 @@ function Home() {
   const [market, setMarket] = useState<Market>("SOL-USD");
   const [leverage, setLeverage] = useState(10);
   const [margin, setMargin] = useState(50);
+  const [tp, setTp] = useState("200");
+  const [sl, setSl] = useState("85");
   const [session, setSession] = useState<WalletSession | null>(null);
   const [embedded, setEmbedded] = useState(false);
   const [injected, setInjected] = useState(false);
@@ -105,16 +107,51 @@ function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const composed = useMemo(() => {
-    const ticker = market.replace("-USD", "").toLowerCase();
-    return `${side.toLowerCase()} ${ticker} ${leverage}x ${margin} usdc`;
-  }, [side, market, leverage, margin]);
+  const composed = useMemo(
+    () => composeLine(side, market, leverage, margin, tp, sl),
+    [side, market, leverage, margin, tp, sl],
+  );
+
+  function applyDraft(patch: {
+    side?: "LONG" | "SHORT";
+    market?: Market;
+    leverage?: number;
+    margin?: number;
+    tp?: string;
+    sl?: string;
+  }) {
+    const nextSide = patch.side ?? side;
+    const nextMarket = patch.market ?? market;
+    const nextLev = patch.leverage ?? leverage;
+    const nextMargin = patch.margin ?? margin;
+    const nextTp = patch.tp ?? tp;
+    const nextSl = patch.sl ?? sl;
+    if (patch.side !== undefined) setSide(patch.side);
+    if (patch.market !== undefined) setMarket(patch.market);
+    if (patch.leverage !== undefined) setLeverage(patch.leverage);
+    if (patch.margin !== undefined) setMargin(patch.margin);
+    if (patch.tp !== undefined) setTp(patch.tp);
+    if (patch.sl !== undefined) setSl(patch.sl);
+    setText(composeLine(nextSide, nextMarket, nextLev, nextMargin, nextTp, nextSl));
+  }
+
+  function applyIntent(intent: TradeIntent, raw?: string) {
+    setSide(intent.side);
+    setMarket(intent.market);
+    setLeverage(intent.leverage);
+    setMargin(intent.marginUsdc);
+    setTp(intent.tpPrice !== undefined ? String(intent.tpPrice) : "");
+    setSl(intent.slPrice !== undefined ? String(intent.slPrice) : "");
+    if (raw !== undefined) setText(raw);
+  }
 
   async function runPreview(raw: string) {
     setBusy(true);
     setError(null);
     setConfirmMsg(null);
     try {
+      const parsed = tryParse(raw);
+      if (parsed?.kind === "trade") applyIntent(parsed.intent);
       const res = await previewFn({ data: { text: raw, owner: session?.address ?? "web" } });
       if (!res.ok) {
         setPreview(null);
@@ -167,38 +204,19 @@ function Home() {
             setText={setText}
             busy={busy}
             onPreview={() => void runPreview(text)}
-            onExample={(ex) => {
-              setText(ex);
-              void runPreview(ex);
-            }}
+            onExample={(ex) => void runPreview(ex)}
             side={side}
-            setSide={(s) => {
-              setSide(s);
-              setText(
-                `${s.toLowerCase()} ${market.replace("-USD", "").toLowerCase()} ${leverage}x ${margin} usdc`,
-              );
-            }}
+            setSide={(s) => applyDraft({ side: s })}
             market={market}
-            setMarket={(m) => {
-              setMarket(m);
-              setText(
-                `${side.toLowerCase()} ${m.replace("-USD", "").toLowerCase()} ${leverage}x ${margin} usdc`,
-              );
-            }}
+            setMarket={(m) => applyDraft({ market: m })}
             leverage={leverage}
-            setLeverage={(x) => {
-              setLeverage(x);
-              setText(
-                `${side.toLowerCase()} ${market.replace("-USD", "").toLowerCase()} ${x}x ${margin} usdc`,
-              );
-            }}
+            setLeverage={(x) => applyDraft({ leverage: x })}
             margin={margin}
-            setMargin={(n) => {
-              setMargin(n);
-              setText(
-                `${side.toLowerCase()} ${market.replace("-USD", "").toLowerCase()} ${leverage}x ${n} usdc`,
-              );
-            }}
+            setMargin={(n) => applyDraft({ margin: n })}
+            tp={tp}
+            sl={sl}
+            setTp={(v) => applyDraft({ tp: v })}
+            setSl={(v) => applyDraft({ sl: v })}
             composed={composed}
           />
           <PreviewPanel
@@ -300,6 +318,10 @@ function CommandPanel(props: {
   setLeverage: (n: number) => void;
   margin: number;
   setMargin: (n: number) => void;
+  tp: string;
+  sl: string;
+  setTp: (v: string) => void;
+  setSl: (v: string) => void;
   composed: string;
 }) {
   return (
@@ -319,7 +341,7 @@ function CommandPanel(props: {
           aria-label="Order command"
           value={props.text}
           onChange={(e) => props.setText(e.target.value)}
-          placeholder="long sol 10x 50 usdc tp @ 200"
+          placeholder="long sol 10x 50 usdc tp @ 200 sl @ 85"
         />
         <Button type="submit" disabled={props.busy} size="lg" className="shrink-0 sm:w-32">
           {props.busy ? "Pricing…" : "Preview"}
@@ -393,6 +415,24 @@ function CommandPanel(props: {
             </Button>
           ))}
         </Row>
+        <Row label="TP / SL">
+          <Input
+            aria-label="Take profit price"
+            inputMode="decimal"
+            placeholder="tp"
+            value={props.tp}
+            onChange={(e) => props.setTp(e.target.value)}
+            className="h-9 w-28 px-2.5"
+          />
+          <Input
+            aria-label="Stop loss price"
+            inputMode="decimal"
+            placeholder="sl"
+            value={props.sl}
+            onChange={(e) => props.setSl(e.target.value)}
+            className="h-9 w-28 px-2.5"
+          />
+        </Row>
       </div>
       <p className="mt-3 font-mono text-xs text-faint">{props.composed}</p>
     </section>
@@ -451,10 +491,13 @@ function PreviewPanel(props: {
             <Stat label="Notional" value={`$${p.notionalUsdc.toFixed(2)}`} />
             <Stat label="Mark" value={`$${fmt(p.markPrice)}`} />
             <Stat label="Est. liq" value={`~$${fmt(p.estLiqPrice)}`} />
-            <Stat label="Fee" value={`$${p.feeUsdc.toFixed(4)}`} />
             <Stat
-              label="TP / SL"
-              value={`${p.intent.tpPrice ?? "—"} / ${p.intent.slPrice ?? "—"}`}
+              label="Take profit"
+              value={p.intent.tpPrice !== undefined ? `$${fmt(p.intent.tpPrice)}` : "UNSET"}
+            />
+            <Stat
+              label="Stop loss"
+              value={p.intent.slPrice !== undefined ? `$${fmt(p.intent.slPrice)}` : "UNSET"}
             />
           </dl>
           {p.warnings.map((w) => (
@@ -721,6 +764,27 @@ function Claims() {
       </ul>
     </section>
   );
+}
+
+function composeLine(
+  side: "LONG" | "SHORT",
+  market: Market,
+  leverage: number,
+  margin: number,
+  tp: string,
+  sl: string,
+): string {
+  const bits = [
+    side.toLowerCase(),
+    market.replace("-USD", "").toLowerCase(),
+    `${leverage}x`,
+    `${margin} usdc`,
+  ];
+  const tpN = Number(String(tp).replace(/,/g, ""));
+  const slN = Number(String(sl).replace(/,/g, ""));
+  if (Number.isFinite(tpN) && tpN > 0) bits.push(`tp @ ${tpN}`);
+  if (Number.isFinite(slN) && slN > 0) bits.push(`sl @ ${slN}`);
+  return bits.join(" ");
 }
 
 function fmt(n: number): string {

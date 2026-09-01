@@ -6,7 +6,7 @@
  */
 import { BOT_TOKEN, DESK_URL, MARKETS } from "../config.ts";
 import { PUBLIC_DESK_URL, REPO_BRANCH, REPO_URL } from "../core/constants.ts";
-import { parseCloseIntent, parseTradeIntent, tryParse } from "../core/intent.ts";
+import { parseCloseIntent, parseTradeIntent, parseTriggerOnly, tryParse } from "../core/intent.ts";
 import { closePosition, confirmTrade, listPositions, previewTrade, privacyStatus } from "../core/engine.ts";
 import { formatPreviewCard } from "../core/risk.ts";
 import type { Market, Side, TradeIntent } from "../core/types.ts";
@@ -68,7 +68,9 @@ function encodeDraft(w: Wizard): string {
   const mkt = w.market ? w.market.replace("-USD", "") : "";
   const lev = w.leverage ? String(w.leverage) : "";
   const mar = w.marginUsdc ? String(w.marginUsdc) : "";
-  return `w:${side}:${mkt}:${lev}:${mar}`;
+  const tp = w.tpPrice ? String(w.tpPrice) : "";
+  const sl = w.slPrice ? String(w.slPrice) : "";
+  return `w:${side}:${mkt}:${lev}:${mar}:${tp}:${sl}`;
 }
 
 function decodeDraft(data: string, owner: string): Wizard {
@@ -80,6 +82,8 @@ function decodeDraft(data: string, owner: string): Wizard {
   if (parts[2] && TICKER[parts[2]]) w.market = TICKER[parts[2]];
   if (parts[3]) w.leverage = Number(parts[3]);
   if (parts[4]) w.marginUsdc = Number(parts[4]);
+  if (parts[5]) w.tpPrice = Number(parts[5]);
+  if (parts[6]) w.slPrice = Number(parts[6]);
   return w;
 }
 
@@ -110,8 +114,10 @@ function help(): string {
     "CairoBot — private perps on Extended mainnet.",
     "",
     "Type an order:",
-    "  long sol 10x 50 usdc tp @ 200",
-    "Or tap LONG / SHORT and fill the intent.",
+    "  long sol 10x 50 usdc tp @ 200 sl @ 85",
+    "Or tap LONG / SHORT, then add:",
+    "  sl @ 85",
+    "  tp @ 200",
     "",
     "/positions   open positions",
     "/privacy     what is actually private",
@@ -132,7 +138,7 @@ function signHint(): string {
     "CLI:",
     `git clone ${REPO_URL}.git && cd CairoBot && git checkout ${REPO_BRANCH}`,
     "npm install",
-    'npm run cli -- preview "long sol 10x 50 usdc tp @ 200"',
+    'npm run cli -- preview "long sol 10x 50 usdc tp @ 200 sl @ 85"',
     "",
     "Agent: copy mcp.json from the desk (OpenClaw / Hermes).",
   ].join("\n");
@@ -158,6 +164,17 @@ function ready(w: Wizard): w is TradeIntent {
   return Boolean(w.owner && w.market && w.side && w.leverage && w.marginUsdc);
 }
 
+function htmlPre(text: string): string {
+  const escaped = text
+    .split("&")
+    .join("&" + "amp;")
+    .split("<")
+    .join("&" + "lt;")
+    .split(">")
+    .join("&" + "gt;");
+  return "<pre>" + escaped + "</pre>";
+}
+
 async function maybePreview(chatId: number, w: Wizard) {
   if (!ready(w)) {
     const missing = ["side", "market", "leverage", "marginUsdc"].filter(
@@ -170,7 +187,10 @@ async function maybePreview(chatId: number, w: Wizard) {
   }
   const preview = await previewTrade(w);
   merge(String(chatId), { ...w, previewId: preview.id });
-  await send(chatId, formatPreviewCard(preview), { reply_markup: signMarkup() });
+  await send(chatId, htmlPre(formatPreviewCard(preview)), {
+    parse_mode: "HTML",
+    reply_markup: signMarkup(),
+  });
 }
 
 async function handleText(chatId: number, text: string) {
@@ -215,6 +235,22 @@ async function handleText(chatId: number, text: string) {
       await send(chatId, message, { reply_markup: signMarkup() });
       return;
     }
+    return;
+  }
+
+  const trigger = parseTriggerOnly(trimmed);
+  if (trigger) {
+    const existing = wizards.get(String(chatId));
+    if (!existing || !ready({ ...existing, owner })) {
+      await send(
+        chatId,
+        "No draft yet. Send an order first, then `sl @ 85` or `tp @ 200`.",
+        { reply_markup: seedButtons(existing) },
+      );
+      return;
+    }
+    const next = merge(String(chatId), { owner, ...trigger });
+    await maybePreview(chatId, next);
     return;
   }
 
