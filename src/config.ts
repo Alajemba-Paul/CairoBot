@@ -1,4 +1,4 @@
-import { SN_MAIN } from "./core/constants.ts";
+import { PUBLIC_DESK_URL, PUBLIC_TELEGRAM_BOT, SN_MAIN } from "./core/constants.ts";
 
 /**
  * CairoBot v2 — Starknet mainnet defaults.
@@ -31,8 +31,9 @@ export const EXTENDED_API_KEY = readEnv("EXTENDED_API_KEY", "");
 export const OPERATOR_ADDRESS = readEnv("OPERATOR_ADDRESS", "");
 export const OPERATOR_PRIVATE_KEY = readEnv("OPERATOR_PRIVATE_KEY", "");
 export const BOT_TOKEN = readEnv("BOT_TOKEN", "");
-export const DESK_URL = readEnv("DESK_URL", readEnv("VITE_DESK_URL", ""));
-export const TELEGRAM_BOT = readEnv("VITE_TELEGRAM_BOT", "");
+export const DESK_URL = readEnv("DESK_URL", readEnv("VITE_DESK_URL", PUBLIC_DESK_URL));
+export const TELEGRAM_BOT = readEnv("VITE_TELEGRAM_BOT", PUBLIC_TELEGRAM_BOT);
+export const TELEGRAM_WEBHOOK_SECRET = readEnv("TELEGRAM_WEBHOOK_SECRET", "");
 
 export const MARKETS = ["BTC-USD", "ETH-USD", "SOL-USD", "STRK-USD"] as const;
 export type Market = (typeof MARKETS)[number];
@@ -62,4 +63,5 @@ export const config = {
   HIGH_LEVERAGE_WARN,
   MCP_LEVERAGE_CONFIRM,
   DESK_URL,
+  TELEGRAM_BOT,
 };

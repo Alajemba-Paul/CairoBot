@@ -10,4 +10,8 @@ export const SN_MAIN = {
 } as const;
 
 export const REPO_URL = "https://github.com/Alajemba-Paul/CairoBot";
-export const REPO_BRANCH = "v2";
+export const REPO_BRANCH = "main";
+
+/** Public desk + bot username. Never put BOT_TOKEN here. */
+export const PUBLIC_DESK_URL = "https://cairobot.vercel.app";
+export const PUBLIC_TELEGRAM_BOT = "cairov2_bot";

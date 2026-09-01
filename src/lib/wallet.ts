@@ -1,5 +1,5 @@
 import { MARGIN_ROUTER } from "@/config";
-import { SN_MAIN } from "@/core/constants";
+import { PUBLIC_DESK_URL, PUBLIC_TELEGRAM_BOT, SN_MAIN } from "@/core/constants";
 import { sendPoolCall } from "@/core/privacy";
 import {
   NoWalletSessionError,
@@ -148,10 +148,21 @@ export async function confirmWithWallet(
 export function telegramUrl(): string {
   try {
     const vite = (import.meta as { env?: Record<string, string | undefined> }).env;
-    const bot = vite?.VITE_TELEGRAM_BOT;
+    const bot = vite?.VITE_TELEGRAM_BOT || PUBLIC_TELEGRAM_BOT;
     if (bot && bot.length > 0) return `https://t.me/${bot.replace(/^@/, "")}`;
   } catch {
     /* ignore */
   }
-  return "";
+  return `https://t.me/${PUBLIC_TELEGRAM_BOT}`;
+}
+
+export function deskUrl(): string {
+  try {
+    const vite = (import.meta as { env?: Record<string, string | undefined> }).env;
+    const url = vite?.VITE_DESK_URL;
+    if (url && url.length > 0) return url;
+  } catch {
+    /* ignore */
+  }
+  return PUBLIC_DESK_URL;
 }
