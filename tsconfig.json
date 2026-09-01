@@ -1,15 +1,36 @@
 {
   "compilerOptions": {
-    "target": "es2022",
-    "module": "commonjs",
-    "rootDir": ".",
-    "outDir": "./dist",
-    "esModuleInterop": true,
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "strict": true,
+    "isolatedModules": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true
+    // `src/lib/db.ts` imports scripts/migration-plan.mjs; checkJs types the
+    // implementation itself instead of a hand-written declaration beside it.
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "types": [
+      "vite/client",
+      "node"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    },
+    "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*", "config/**/*"],
-  "exclude": ["node_modules", "**/*.test.ts"]
+  "include": [
+    "src",
+    "server"
+  ]
 }
