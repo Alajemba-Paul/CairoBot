@@ -119,12 +119,21 @@ Confirm still needs a Wallet API session. MCP will not invent a hash.
 
 ## Telegram
 
+Live bot: [t.me/cairov2_bot](https://t.me/cairov2_bot). Desk: [cairobot.vercel.app](https://cairobot.vercel.app).
+
+Type `long sol 10x 50 usdc tp @ 200` or tap buttons that **only** fill a `TradeIntent`. Reply `CONFIRM`. Commands: `/positions` `/privacy` `/cancel`. No in-bot key cache. No shared `EXTENDED_STARK_PRIVATE_KEY`. Signing is Ready / Xverse on the desk.
+
 ```bash
-# .env  BOT_TOKEN=...     (only this adapter needs it)
-npm run telegram
+# long-poll (Railway / Fly / this host)
+BOT_TOKEN=... DESK_URL=https://cairobot.vercel.app npm run telegram
 ```
 
-Type `long sol 10x 50 usdc tp @ 200` or tap buttons that **only** fill a `TradeIntent`. Reply `CONFIRM`. Commands: `/positions` `/privacy` `/cancel`. No in-bot key cache. No shared `EXTENDED_STARK_PRIVATE_KEY`.
+Durable option: set `BOT_TOKEN` on the Vercel project (server-only, never `VITE_`), then:
+
+```
+POST https://cairobot.vercel.app/api/telegram
+setWebhook url=https://cairobot.vercel.app/api/telegram
+```
 
 ## MarginRouter
 
@@ -135,54 +144,37 @@ One helper. Caller must be the STRK20 pool. Measures the ERC-20 balance the pool
 
 `OpenNoteDeposit { note_id, token, amount: u128 }` matches starter-kit positional Serde.
 
-```bash
-cd cairo && scarb build
-```
+## Ship it (mainnet)
 
-## Ship it (mainnet + Vercel + live bot + agent)
+The web desk and Telegram NL path are live. **Confirm still fails closed until MarginRouter is declared on SN_MAIN.** That is the remaining mainnet step, and it needs *your* Ready/Braavos deployer — this bot never holds a key.
 
-GitHub rejected `git push origin main` because this tree is a **new history** (Grok export of v2). Remote `main` is the old Sepolia / StarkZap bot. They do not share a commit. Do **not** force-push `main`. Ship on branch `v2`, PR, merge.
+### 1. Deploy MarginRouter on SN_MAIN
 
-### 1. MarginRouter on SN_MAIN
+Pool (constructor arg): `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`
 
 ```bash
 cd cairo && scarb build
-# starkli declare + deploy with constructor = STRK20 pool
-# 0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a
+# Account must already exist on SN_MAIN and hold STRK for fees.
+starkli declare target/dev/margin_router_MarginRouter.contract_class.json --network mainnet
+starkli deploy <CLASS_HASH> \
+  0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a \
+  --network mainnet
 ```
 
-Set `MARGIN_ROUTER` and `VITE_MARGIN_ROUTER` to the deployed address. Empty helper = confirm fails closed (honest).
+Then set `MARGIN_ROUTER` and `VITE_MARGIN_ROUTER` to the deployed address (Vercel env + any bot host). Empty helper = confirm fails closed (honest).
 
-### 2. Web desk on Vercel
+### 2. Web desk
 
-Production branch must be **`v2` until it is merged to `main`**. Env (no secrets in `VITE_` except public addresses):
+[cairobot.vercel.app](https://cairobot.vercel.app) — Connect Ready / Xverse, preview live Extended marks, sign `privacy_invoke`. Open it **outside** an iframe.
 
-```
-VITE_MARGIN_ROUTER=<helper>
-VITE_TELEGRAM_BOT=<BotFather username without @>
-VITE_DESK_URL=https://<your-app>.vercel.app
-DESK_URL=https://<your-app>.vercel.app
-```
+### 3. Telegram
 
-The desk connects Ready / Xverse, previews live Extended marks, and signs `privacy_invoke`. Open it **outside** an iframe.
-
-### 3. Live Telegram bot (always-on process)
-
-Vercel will not long-poll. Run the adapter on Railway / Render / Fly:
-
-```
-BotFather → /newbot → BOT_TOKEN
-npm run telegram
-```
-
-Env: `BOT_TOKEN`, `DESK_URL`, `MARGIN_ROUTER`, `NETWORK=mainnet`. After deploy, set `VITE_TELEGRAM_BOT` on Vercel so the desk deep-links.
-
-`CONFIRM` in chat never auto-signs. It replies with the desk URL + CLI/MCP copy.
+[t.me/cairov2_bot](https://t.me/cairov2_bot). `CONFIRM` never auto-signs; it sends the desk URL.
 
 ### 4. Agentic flow (MCP)
 
 ```bash
-git clone https://github.com/Alajemba-Paul/CairoBot.git && cd CairoBot && git checkout v2
+git clone https://github.com/Alajemba-Paul/CairoBot.git && cd CairoBot
 npm install
 # drop the OpenClaw / Hermes snippet above into mcp.json
 # tools: preview_trade, confirm_trade, list_positions, close_position, privacy_status
