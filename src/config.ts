@@ -21,7 +21,11 @@ export const ETH_NOT_STRK20 =
 
 export const NETWORK = readEnv("NETWORK", SN_MAIN.NETWORK);
 export const CHAIN_ID = readEnv("CHAIN_ID", SN_MAIN.CHAIN_ID);
-export const RPC_URL = readEnv("RPC_URL", SN_MAIN.RPC_URL);
+export const RPC_URL = (() => {
+  const alchemy = readEnv("ALCHEMY_API_KEY");
+  if (alchemy) return `https://starknet-mainnet.g.alchemy.com/v2/${alchemy}`;
+  return readEnv("RPC_URL", SN_MAIN.RPC_URL);
+})();
 export const POOL = readEnv("POOL", SN_MAIN.POOL);
 export const USDC = readEnv("USDC", SN_MAIN.USDC);
 export const EXTENDED_API = readEnv("EXTENDED_API", SN_MAIN.EXTENDED_API);

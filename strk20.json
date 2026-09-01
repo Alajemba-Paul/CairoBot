@@ -1,4 +1,8 @@
 {
+  "transactions": [],
+  "contracts": [],
+  "demo_video": "",
+  "demo_url": "https://cairobot.vercel.app",
   "idea": "IDEA-02",
   "one_liner": "Private perps on Extended, from chat, CLI, or an agent.",
   "network": "mainnet",
@@ -8,40 +12,18 @@
     "0": "FundMargin",
     "1": "SweepPnl"
   },
-  "transactions": [],
-  "contracts": [
-    {
-      "name": "STRK20 Pool",
-      "address": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
-      "network": "mainnet",
-      "role": "shield / note-to-note / invoke"
-    },
-    {
-      "name": "USDC",
-      "address": "0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8",
-      "network": "mainnet",
-      "role": "collateral"
-    },
-    {
-      "name": "Extended venue (deposit)",
-      "address": "0x062da0780fae50d68cecaa5a051606dc21217ba290969b302db4dd99d2e9b470",
-      "network": "mainnet",
-      "role": "FundMargin destination"
-    },
-    {
-      "name": "MarginRouter",
-      "address": "",
-      "network": "mainnet",
-      "role": "privacy_invoke helper",
-      "note": "Deploy cairo/ then fill this address. Do not invent a hash."
-    }
-  ],
+  "pool": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
+  "usdc": "0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8",
+  "extended_venue": "0x062da0780fae50d68cecaa5a051606dc21217ba290969b302db4dd99d2e9b470",
+  "helper": {
+    "name": "MarginRouter",
+    "address": "",
+    "note": "Deploy cairo/ on SN_MAIN, then put the address in contracts as a string. Do not invent a hash."
+  },
   "checklist": {
     "viewing_key": "held in Ready/Xverse — never in the bot",
     "shield": "pool OPEN from public USDC into a note",
     "note_to_note": "helper leftover / SweepPnl OpenNoteDeposit",
     "helper_invoke": "privacy_invoke op=0 FundMargin, op=1 SweepPnl"
-  },
-  "demo_video": "",
-  "demo_url": ""
+  }
 }
