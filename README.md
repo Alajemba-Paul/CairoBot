@@ -137,10 +137,23 @@ setWebhook url=https://cairobot.vercel.app/api/telegram
 
 ## MarginRouter
 
-One helper. Caller must be the STRK20 pool. Measures the ERC-20 balance the pool already sent. One invoke per tx. End token balance is 0. Does not transfer to the user.
+One helper. Caller must be the STRK20 pool. Measures the ERC-20 balance the pool already sent. One `privacy_invoke` per tx (Starknet selectors are name-only — there is no second entry point). End token balance is 0. Does not transfer to the user.
 
-- `op=0 FundMargin` — if `venue != 0`, approve + `deposit(user, amount)`; leftover → `OpenNoteDeposit`. If venue is 0, approve the full balance back to the pool (valid first pool tx).
+```
+privacy_invoke(op, token, amount, note_id, venue, user) -> Span<OpenNoteDeposit>
+```
+
+- `op=0 FundMargin` — if `venue != 0`, approve + `deposit(user, spend)`; leftover → `OpenNoteDeposit`. If venue is 0, approve the full balance back to the pool (valid first pool tx).
 - `op=1 SweepPnl` — approve the full helper balance to the pool as one open note.
+- `amount` is u256 in calldata so the wallet knows the spend. `0` means “everything the pool sent”.
+- `note_id` is the Wallet API placeholder `${openNoteIds[0]}` — never a timestamp.
+
+Desk / CLI / MCP hand Ready or Xverse **two actions in one tx**:
+
+1. `transfer` with `amount: "OPEN"` (leftover / SweepPnl slot)
+2. `invoke` `MarginRouter` with the calldata above
+
+Telegram never signs. Reply `CONFIRM` fail-closes and sends the desk URL.
 
 `OpenNoteDeposit { note_id, token, amount: u128 }` matches starter-kit positional Serde.
 

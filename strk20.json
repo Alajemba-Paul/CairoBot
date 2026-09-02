@@ -18,7 +18,7 @@
   "helper": {
     "name": "MarginRouter",
     "address": "",
-    "note": "Deploy cairo/ on SN_MAIN, then put the address in contracts as a string. Do not invent a hash."
+    "note": "Deploy cairo/ on SN_MAIN, then put the address in contracts as a string. Do not invent a hash. privacy_invoke(op, token, amount, note_id, venue, user)."
   },
   "checklist": {
     "viewing_key": "held in Ready/Xverse — never in the bot",

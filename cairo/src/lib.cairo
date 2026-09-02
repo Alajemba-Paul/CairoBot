@@ -5,8 +5,13 @@
 //! leftovers so the pool can credit notes. One invoke per tx. End token
 //! balance is 0. We never transfer to the user.
 //!
+//! Signature matches the official helper pattern (op first, amount in
+//! calldata so the wallet/pool know the spend, note_id is an open-note
+//! placeholder):
+//!   privacy_invoke(op, token, amount, note_id, venue, user)
+//!
 //! op = 0 FundMargin
-//!   venue != 0  → approve + deposit(user, amount); leftover → OpenNoteDeposit
+//!   venue != 0  → approve + deposit(user, spend); leftover → OpenNoteDeposit
 //!   venue == 0  → approve full balance back to the pool (valid first pool tx)
 //! op = 1 SweepPnl
 //!   approve full helper balance to the pool as one open note
@@ -34,25 +39,19 @@ pub trait IVenue<TContractState> {
     fn deposit(ref self: TContractState, user: ContractAddress, amount: u256);
 }
 
-/// Spec signature — token, pool, note, op, venue, user.
+/// One entry point. The pool deserializes calldata into these parameters.
+/// Do not add a second `privacy_invoke` — Starknet selectors are name-only.
 #[starknet::interface]
 pub trait IMarginRouter<TContractState> {
     fn privacy_invoke(
         ref self: TContractState,
-        token: ContractAddress,
-        pool_address: ContractAddress,
-        note_id: felt252,
         op: u8,
+        token: ContractAddress,
+        amount: u256,
+        note_id: felt252,
         venue: ContractAddress,
         user: ContractAddress,
     ) -> Span<OpenNoteDeposit>;
-}
-
-/// Official STRK20 helper ABI the pool's INVOKE_SELECTOR deserializes.
-#[starknet::interface]
-pub trait IPrivacyHelper<TContractState> {
-    fn privacy_invoke(ref self: TContractState, deposits: Span<OpenNoteDeposit>) -> Span<OpenNoteDeposit>;
-    fn arm(ref self: TContractState, op: u8, venue: ContractAddress, user: ContractAddress);
 }
 
 const OP_FUND_MARGIN: u8 = 0;
@@ -72,109 +71,72 @@ mod MarginRouter {
     #[storage]
     struct Storage {
         pool: ContractAddress,
-        armed_op: u8,
-        armed_venue: ContractAddress,
-        armed_user: ContractAddress,
     }
 
     #[constructor]
     fn constructor(ref self: ContractState, pool: ContractAddress) {
         assert(!pool.is_zero(), 'pool required');
         self.pool.write(pool);
-        self.armed_op.write(OP_FUND_MARGIN);
     }
 
     #[abi(embed_v0)]
     impl MarginRouterImpl of super::IMarginRouter<ContractState> {
         fn privacy_invoke(
             ref self: ContractState,
-            token: ContractAddress,
-            pool_address: ContractAddress,
-            note_id: felt252,
             op: u8,
-            venue: ContractAddress,
-            user: ContractAddress,
-        ) -> Span<OpenNoteDeposit> {
-            self._privacy_invoke(token, pool_address, note_id, op, venue, user)
-        }
-    }
-
-    #[abi(embed_v0)]
-    impl PrivacyHelperImpl of super::IPrivacyHelper<ContractState> {
-        fn arm(ref self: ContractState, op: u8, venue: ContractAddress, user: ContractAddress) {
-            assert(op == OP_FUND_MARGIN || op == OP_SWEEP_PNL, 'unknown op');
-            self.armed_op.write(op);
-            self.armed_venue.write(venue);
-            self.armed_user.write(user);
-        }
-
-        fn privacy_invoke(
-            ref self: ContractState, deposits: Span<OpenNoteDeposit>,
-        ) -> Span<OpenNoteDeposit> {
-            assert(deposits.len() > 0, 'deposits required');
-            let first = *deposits.at(0);
-            self
-                ._privacy_invoke(
-                    first.token,
-                    get_caller_address(),
-                    first.note_id,
-                    self.armed_op.read(),
-                    self.armed_venue.read(),
-                    self.armed_user.read(),
-                )
-        }
-    }
-
-    #[generate_trait]
-    impl InternalImpl of InternalTrait {
-        fn _privacy_invoke(
-            ref self: ContractState,
             token: ContractAddress,
-            pool_address: ContractAddress,
+            amount: u256,
             note_id: felt252,
-            op: u8,
             venue: ContractAddress,
             user: ContractAddress,
         ) -> Span<OpenNoteDeposit> {
             let caller = get_caller_address();
             let pool = self.pool.read();
             assert(caller == pool, 'caller must be pool');
-            assert(pool_address == pool, 'wrong pool');
             assert(!token.is_zero(), 'token required');
+            assert(op == OP_FUND_MARGIN || op == OP_SWEEP_PNL, 'unknown op');
 
             let this = get_contract_address();
             let erc20 = IERC20Dispatcher { contract_address: token };
             let balance: u256 = erc20.balance_of(this);
             assert(balance.high == 0, 'amount exceeds u128');
-            let amount: u128 = balance.low;
+            assert(amount.high == 0, 'amount exceeds u128');
 
-            if op == OP_FUND_MARGIN {
-                if !venue.is_zero() {
-                    assert(!user.is_zero(), 'user required');
-                    erc20.approve(venue, balance);
-                    IVenueDispatcher { contract_address: venue }.deposit(user, balance);
-                    let leftover: u256 = erc20.balance_of(this);
-                    assert(leftover.high == 0, 'leftover exceeds u128');
-                    if leftover.low == 0 {
-                        return array![].span();
-                    }
-                    erc20.approve(pool_address, leftover);
-                    return array![
-                        OpenNoteDeposit { note_id, token, amount: leftover.low },
-                    ]
-                        .span();
-                }
-                erc20.approve(pool_address, balance);
-                return array![OpenNoteDeposit { note_id, token, amount }].span();
-            }
+            // Spend is the requested amount when set, otherwise everything the
+            // pool already sent. Always measured — never trust the external
+            // protocol's return.
+            let spend: u256 = if amount.low == 0 {
+                balance
+            } else {
+                assert(balance >= amount, 'underfunded');
+                amount
+            };
+            assert(spend.low != 0, 'zero spend');
 
             if op == OP_SWEEP_PNL {
-                erc20.approve(pool_address, balance);
-                return array![OpenNoteDeposit { note_id, token, amount }].span();
+                erc20.approve(pool, balance);
+                return array![
+                    OpenNoteDeposit { note_id, token, amount: balance.low },
+                ]
+                    .span();
             }
 
-            assert(false, 'unknown op');
-            array![].span()
+            // op == FundMargin
+            if venue.is_zero() {
+                erc20.approve(pool, balance);
+                return array![OpenNoteDeposit { note_id, token, amount: balance.low }].span();
+            }
+
+            assert(!user.is_zero(), 'user required');
+            erc20.approve(venue, spend);
+            IVenueDispatcher { contract_address: venue }.deposit(user, spend);
+            let leftover: u256 = erc20.balance_of(this);
+            assert(leftover.high == 0, 'leftover exceeds u128');
+            if leftover.low == 0 {
+                return array![].span();
+            }
+            erc20.approve(pool, leftover);
+            array![OpenNoteDeposit { note_id, token, amount: leftover.low }].span()
         }
     }
 }

@@ -83,24 +83,35 @@ export type WalletSession = {
   address: string;
   account?: {
     strk20InvokeTransaction?: (
-      payload: Strk20InvokePayload,
+      payload: Strk20Action[] | Strk20InvokePayload,
     ) => Promise<{ transaction_hash?: string }>;
+    strk20PrepareInvoke?: (
+      actions: Strk20Action[],
+      simulate?: boolean,
+    ) => Promise<unknown>;
   };
 };
 
-export type Strk20Action = {
-  action: "OPEN";
-  poolAddress: string;
-  openNoteIds: string[];
+/** Official Wallet API 0.10.3 transfer. amount "OPEN" creates the leftover note. */
+export type Strk20TransferAction = {
+  type: "transfer";
+  token: string;
+  amount: "OPEN" | string;
+  recipient: string;
 };
 
+/** Official Wallet API invoke. Calldata may contain ${openNoteIds[N]} and ${poolAddress}. */
+export type Strk20InvokeAction = {
+  type: "invoke";
+  contract: string;
+  calldata: string[];
+};
+
+export type Strk20Action = Strk20TransferAction | Strk20InvokeAction;
+
+/** Compatibility wrapper some injected wallets still accept. */
 export type Strk20InvokePayload = {
   actions: Strk20Action[];
-  calls?: Array<{
-    contractAddress: string;
-    entrypoint: string;
-    calldata: string[];
-  }>;
 };
 
 export class NoWalletSessionError extends Error {

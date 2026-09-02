@@ -5,6 +5,7 @@ import {
   NoWalletSessionError,
   type Preview,
   type Receipt,
+  type Strk20Action,
   type Strk20InvokePayload,
   type WalletSession,
 } from "@/core/types";
@@ -17,8 +18,12 @@ type Injected = {
   account?: {
     address?: string;
     strk20InvokeTransaction?: (
-      payload: Strk20InvokePayload,
+      payload: Strk20Action[] | Strk20InvokePayload,
     ) => Promise<{ transaction_hash?: string }>;
+    strk20PrepareInvoke?: (
+      actions: Strk20Action[],
+      simulate?: boolean,
+    ) => Promise<unknown>;
   };
   enable?: (opts?: { starknetVersion?: string }) => Promise<string[] | void>;
   request?: (args: { type: string; params?: unknown }) => Promise<unknown>;
@@ -82,14 +87,21 @@ export async function connectWallet(): Promise<WalletSession> {
   if (!address) throw new NoWalletSessionError();
 
   const account = {
-    strk20InvokeTransaction: async (payload: Strk20InvokePayload) => {
+    strk20PrepareInvoke: async (actions: Strk20Action[], simulate?: boolean) => {
+      if (typeof wallet.account?.strk20PrepareInvoke === "function") {
+        return wallet.account.strk20PrepareInvoke(actions, simulate);
+      }
+      return undefined;
+    },
+    strk20InvokeTransaction: async (payload: Strk20Action[] | Strk20InvokePayload) => {
+      const actions = Array.isArray(payload) ? payload : payload.actions;
       if (typeof wallet.account?.strk20InvokeTransaction === "function") {
-        return wallet.account.strk20InvokeTransaction(payload);
+        return wallet.account.strk20InvokeTransaction(actions);
       }
       if (typeof wallet.request === "function") {
         const result = (await wallet.request({
           type: "wallet_strk20InvokeTransaction",
-          params: payload,
+          params: actions,
         })) as { transaction_hash?: string };
         return result;
       }
@@ -121,14 +133,12 @@ export async function confirmWithWallet(
       "MarginRouter undeployed. Deploy cairo/ on SN_MAIN and set VITE_MARGIN_ROUTER.",
     );
   }
-  const noteId = `0x${Date.now().toString(16)}`;
   const fundTxHash = await sendPoolCall({
     session,
     poolAddress: SN_MAIN.POOL,
-    openNoteIds: [noteId],
     helper,
     token: SN_MAIN.USDC,
-    noteId,
+    amountUsdc: preview.intent.marginUsdc,
     op: 0,
     venue: SN_MAIN.EXTENDED_VENUE,
     user: session.address,

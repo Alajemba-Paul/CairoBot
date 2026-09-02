@@ -86,13 +86,11 @@ export async function confirmTrade(previewId: string, opts: ConfirmOpts = {}): P
     );
   }
 
-  const noteId = `0x${Date.now().toString(16)}`;
   const fundTxHash = await sendPoolCall({
     session,
-    openNoteIds: [noteId],
     helper,
     token: USDC,
-    noteId,
+    amountUsdc: preview.intent.marginUsdc,
     op: 0,
     venue: EXTENDED_VENUE,
     user: session.address,
@@ -152,15 +150,13 @@ export async function closePosition(
     );
   }
 
-  const noteId = `0x${Date.now().toString(16)}`;
   const sweepTxHash = await sendPoolCall({
     session: opts.session,
-    openNoteIds: [noteId],
     helper,
     token: USDC,
-    noteId,
+    amountUsdc: 0,
     op: 1,
-    venue: "0",
+    venue: "0x0",
     user: opts.session.address,
   });
 
